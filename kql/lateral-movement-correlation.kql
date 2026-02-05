@@ -1,0 +1,45 @@
+// Lateral Movement Correlation
+// Identifies potential lateral movement by correlating
+// remote logons followed by suspicious process execution.
+
+let TimeWindow = 1h;
+
+let RemoteLogons =
+    IdentityLogonEvents
+    | where TimeGenerated > ago(1d)
+    | where LogonType in ("RemoteInteractive", "Network")
+    | project
+        AccountUpn,
+        DeviceName,
+        IPAddress,
+        LogonTime = TimeGenerated;
+
+let SuspiciousProcesses =
+    DeviceProcessEvents
+    | where TimeGenerated > ago(1d)
+    | where ProcessCommandLine has_any (
+        "psexec",
+        "wmic",
+        "winrm",
+        "schtasks"
+    )
+    | project
+        DeviceName,
+        ProcessName,
+        ProcessCommandLine,
+        ProcessTime = TimeGenerated;
+
+RemoteLogons
+| join kind=inner (
+    SuspiciousProcesses
+) on DeviceName
+| where ProcessTime between (LogonTime .. LogonTime + TimeWindow)
+| project
+    AccountUpn,
+    DeviceName,
+    IPAddress,
+    LogonTime,
+    ProcessTime,
+    ProcessName,
+    ProcessCommandLine
+| order by LogonTime desc
