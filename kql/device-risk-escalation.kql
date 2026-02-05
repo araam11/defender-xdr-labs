@@ -1,0 +1,39 @@
+// Device Risk Escalation Logic
+// Escalates device risk based on multiple low-confidence signals
+// observed within a defined time window.
+
+let TimeWindow = 24h;
+
+let SuspiciousProcesses =
+    DeviceProcessEvents
+    | where TimeGenerated > ago(1d)
+    | where ProcessCommandLine has_any (
+        "powershell -enc",
+        "rundll32",
+        "mshta",
+        "regsvr32"
+    )
+    | summarize ProcessCount = count() by DeviceName;
+
+let FailedLogons =
+    IdentityLogonEvents
+    | where TimeGenerated > ago(1d)
+    | where ActionType == "LogonFailed"
+    | summarize FailedLogons = count() by DeviceName;
+
+let NetworkAnomalies =
+    DeviceNetworkEvents
+    | where TimeGenerated > ago(1d)
+    | where RemotePort in (3389, 5985, 5986)
+    | summarize RemoteConnections = count() by DeviceName;
+
+SuspiciousProcesses
+| join kind=inner (FailedLogons) on DeviceName
+| join kind=inner (NetworkAnomalies) on DeviceName
+| project
+    DeviceName,
+    ProcessCount,
+    FailedLogons,
+    RemoteConnections
+| where ProcessCount > 1 and FailedLogons > 5 and RemoteConnections > 3
+| order by ProcessCount desc
