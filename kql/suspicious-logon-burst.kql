@@ -1,0 +1,26 @@
+// Suspicious Logon Burst
+// Identifies accounts with an unusual number of failed logons
+// followed by a successful logon within a short time window.
+
+let TimeWindow = 30m;
+let FailureThreshold = 10;
+
+IdentityLogonEvents
+| where TimeGenerated > ago(1d)
+| summarize
+    FailedLogons = countif(ActionType == "LogonFailed"),
+    SuccessfulLogons = countif(ActionType == "LogonSuccess"),
+    FirstSeen = min(TimeGenerated),
+    LastSeen = max(TimeGenerated)
+  by AccountUpn, IPAddress
+| where FailedLogons >= FailureThreshold
+| where SuccessfulLogons > 0
+| where LastSeen - FirstSeen <= TimeWindow
+| project
+    AccountUpn,
+    IPAddress,
+    FailedLogons,
+    SuccessfulLogons,
+    FirstSeen,
+    LastSeen
+| order by FailedLogons desc
